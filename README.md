@@ -30,3 +30,27 @@ config zone
 Run `make` to build the default version for `x86_64`. You can override ARCH and
 VERSION, e.g `make ARCH=armhf`. See ARCHS and VERSIONS files for available
 architectures and versions.
+
+## Init
+### server
+Before run k3s as service, set param with type `'server'`.
+```bash
+cat > /etc/config/k3s << EOF
+config opts 'globals'
+   option type 'server'
+   option opts '--disable=traefik'
+   option root '/var/k3s/data'
+EOF
+```
+Service inits cluster and sets a new `init` parameter to `'1'` in k3s config file.
+
+### agent
+Before run k3s as service, set param with type `'agent'`.
+```bash
+cat > /etc/config/k3s << EOF
+config opts 'globals'
+   option type 'agent'
+   option opts '--token-file /etc/token --server https://<ip or hostname of server1>:6443 --with-node-id'
+EOF
+```
+Service joins automaticaly the server.

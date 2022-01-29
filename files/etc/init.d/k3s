@@ -4,7 +4,10 @@ START=60
 STOP=20
 
 PIDFILE=/var/run/k3s.pid
-EXEC="/usr/bin/k3s-wrapper"
+EXEC="/usr/bin/k3s"
+
+OPTS="$(uci_get k3s.globals.opts)"
+[ "$(uci_get k3s.globals.root)" != "" ] && DATA="--data-dir $(uci_get k3s.globals.root)"
 
 ensure_cgroup_mount() {
   # Unmount /sys/fs/cgroup if mounted as cgroup
@@ -21,11 +24,22 @@ ensure_cgroup_mount() {
   done
 }
 
+ensure_root_rshared() {
+/bin/mount --make-rshared /
+}
+
 start() {
   ensure_cgroup_mount
-  start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" \
-    -- server $(uci_get k3s.globals.opts) \
-    --data-dir $(uci_get k3s.globals.root)
+  ensure_root_rshared
+  if [ "$(uci_get_state k3s.globals.type)" = "server" ];then
+    if [ "$(uci_get_state k3s.globals.init)" = "" ]; then
+      uci_set k3s globals init 1
+      OPTS="$OPTS --cluster-init"
+    fi
+    start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" -- server $OPTS --log /var/log/k3s $DATA
+  fi
+  [ "$(uci_get_state k3s.globals.type)" = "agent" ] && \
+    start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" -- agent  $OPTS --log /var/log/k3s $DATA
 }
 
 stop() {
