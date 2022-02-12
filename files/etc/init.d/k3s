@@ -9,37 +9,31 @@ EXEC="/usr/bin/k3s"
 OPTS="$(uci_get k3s.globals.opts)"
 [ "$(uci_get k3s.globals.root)" != "" ] && DATA="--data-dir $(uci_get k3s.globals.root)"
 
-ensure_cgroup_mount() {
-  # Unmount /sys/fs/cgroup if mounted as cgroup
-  grep -q ' /sys/fs/cgroup cgroup' /proc/self/mounts && umount /sys/fs/cgroup
-
-  grep -q ' /sys/fs/cgroup tmpfs' /proc/self/mounts \
-    || mount -t tmpfs -o uid=0,gid=0,mode=0755 cgroup /sys/fs/cgroup
-
-  for sys in $(awk '!/^#/ { if ($4 == 1) print $1 }' /proc/cgroups); do
-    mnt="/sys/fs/cgroup/$sys"
-    grep -q "cgroup $mnt " /proc/self/mounts && continue
-    mkdir -p "$mnt"
-    mount -n -t cgroup -o $sys cgroup "$mnt"
-  done
-}
-
 ensure_root_rshared() {
 /bin/mount --make-rshared /
 }
 
 start() {
-  ensure_cgroup_mount
+
   ensure_root_rshared
   if [ "$(uci_get_state k3s.globals.type)" = "server" ];then
-    if [ "$(uci_get_state k3s.globals.init)" = "" ]; then
-      uci_set k3s globals init 1
+    if [ "$(uci_get_state k3s.globals.cluster)" != "1" ]; then
+      uci_set k3s globals cluster 1
+      uci_commit k3s
       OPTS="$OPTS --cluster-init"
     fi
     start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" -- server $OPTS --log /var/log/k3s $DATA
+    logger "start-stop-daemon -S -b -x \"$EXEC\" -m -p \"$PIDFILE\" -- server $OPTS --log /var/log/k3s $DATA"
   fi
-  [ "$(uci_get_state k3s.globals.type)" = "agent" ] && \
-    start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" -- agent  $OPTS --log /var/log/k3s $DATA
+  if [ "$(uci_get_state k3s.globals.type)" = "agent" ]; then
+    if [ "$(uci_get_state k3s.globals.name)" != "" ]; then
+      OPTS="$OPTS --node-name $(uci_get_state k3s.globals.name)"
+    else
+      OPTS="$OPTS --with-node-id"
+    fi
+    start-stop-daemon -S -b -x "$EXEC" -m -p "$PIDFILE" -- agent  $OPTS --log /var/log/k3s $DATA && \
+    logger "start-stop-daemon -S -b -x \"$EXEC\" -m h-p \"$PIDFILE\" -- agent $OPTS --log /var/log/k3s $DATA"
+  fi
 }
 
 stop() {
